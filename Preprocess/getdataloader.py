@@ -8,8 +8,6 @@ from Preprocess.augment import Cutout, CIFAR10Policy
 # your own data dir
 DIR = {'CIFAR10': 'data', 'CIFAR100': 'data', 'ImageNet': 'data'}
 
-
-
 def GetCifar10(batchsize, attack=False):
     trans_t = transforms.Compose([transforms.RandomCrop(32, padding=4),
                                   transforms.RandomHorizontalFlip(),
@@ -27,8 +25,6 @@ def GetCifar10(batchsize, attack=False):
     train_dataloader = DataLoader(train_data, batch_size=batchsize, shuffle=True, num_workers=8)
     test_dataloader = DataLoader(test_data, batch_size=batchsize, shuffle=False, num_workers=8)
     return train_dataloader, test_dataloader
-
-
 
 
 def GetCifar100(batchsize):

@@ -24,6 +24,13 @@ def amp_train_ann(train_dataloader, test_dataloader, model,
                 rank=0):
     use_amp=True
 
+    wandb.login()
+    run = wandb.init(
+        project="ANN2SNN_PNC",
+        config={"lr": lr, "max_epochs": epochs, "weight_decay": wd},
+    )
+
+
     if rank==0:
         with open('./runs/'+save+'_log.txt','a') as log:
             log.write('lr={},epochs={},wd={}\n'.format(lr,epochs,wd))
@@ -73,7 +80,7 @@ def amp_train_ann(train_dataloader, test_dataloader, model,
             info='Epoch:{},Train_loss:{},Val_loss:{},Acc:{}'.format(epoch, train_loss, val_loss, val_acc.item())
             with open('./runs/'+save+'_log.txt','a') as log:
                 log.write(info+'\n')
-            wandb.log({"epoch": epoch, "train/loss": train_loss, "val/loss": val_loss, "val/acc": val_acc.item})
+            run.log({"epoch": epoch, "train/loss": train_loss, "val/loss": val_loss, "val/acc": val_acc.item})
             if epoch % 10 == 0:
                 print(model)
         best_acc = max(val_acc, best_acc)
@@ -99,6 +106,12 @@ def train_ann(train_dataloader, test_dataloader, model,
 
     # mt.clear_recorded_data()
     # mt.remove_hooks()
+    wandb.login()
+    run = wandb.init(
+        project="ANN2SNN_PNC",
+        config={"lr": lr, "max_epochs": epochs, "weight_decay": wd},
+    )
+
     if parallel:
         wd=1e-4
 
@@ -147,7 +160,7 @@ def train_ann(train_dataloader, test_dataloader, model,
             info='Epoch:{},Train_loss:{},Val_loss:{},Acc:{},lr:{}'.format(epoch, train_loss, val_loss, val_acc.item(),scheduler.get_last_lr()[0])
             with open('./runs/'+save+'_log.txt','a') as log:
                 log.write(info+'\n')
-            wandb.log({"epoch": epoch, "train/loss": train_loss, "val/loss": val_loss, "val/acc": val_acc.item})
+            run.log({"epoch": epoch, "train/loss": train_loss, "val/loss": val_loss, "val/acc": val_acc.item})
             
         best_acc = max(val_acc, best_acc)
         # print('Epoch:{},Train_loss:{},Val_loss:{},Acc:{}'.format(epoch, epoch_loss/length,val_loss, tmp_acc), flush=True)
