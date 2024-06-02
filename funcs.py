@@ -7,6 +7,7 @@ import random
 import os
 from spikingjelly.activation_based import functional
 from torch.utils.tensorboard import SummaryWriter   
+import wandb
 
 def seed_all(seed=42):
     print(seed)
@@ -58,22 +59,24 @@ def amp_train_ann(train_dataloader, test_dataloader, model,
 
             epoch_loss += loss.item()
             length += len(label)
-        tmp_acc, val_loss = eval_ann(test_dataloader, model, loss_fn, device, rank)
+        val_acc, val_loss = eval_ann(test_dataloader, model, loss_fn, device, rank)
         if parallel:
-            dist.all_reduce(tmp_acc)
-            tmp_acc/=dist.get_world_size()
-        if rank == 0 and save != None and tmp_acc >= best_acc:
+            dist.all_reduce(val_acc)
+            val_acc/=dist.get_world_size()
+        if rank == 0 and save != None and val_acc >= best_acc:
             checkpoint = {"model": model.state_dict(),
               "optimizer": optimizer.state_dict(),
               "scaler": scaler.state_dict()}
             torch.save(checkpoint, './saved_models/' + save + '.pth')
         if rank == 0:
-            info='Epoch:{},Train_loss:{},Val_loss:{},Acc:{}'.format(epoch, epoch_loss/length,val_loss, tmp_acc.item())
+            train_loss = epoch_loss / length
+            info='Epoch:{},Train_loss:{},Val_loss:{},Acc:{}'.format(epoch, train_loss, val_loss, val_acc.item())
             with open('./runs/'+save+'_log.txt','a') as log:
                 log.write(info+'\n')
+            wandb.log({"epoch": epoch, "train/loss": train_loss, "val/loss": val_loss, "val/acc": val_acc.item})
             if epoch % 10 == 0:
                 print(model)
-        best_acc = max(tmp_acc, best_acc)
+        best_acc = max(val_acc, best_acc)
         scheduler.step()
 
     return best_acc, model
@@ -133,17 +136,20 @@ def train_ann(train_dataloader, test_dataloader, model,
             epoch_loss += loss.item()
             length += len(label)
 
-        tmp_acc, val_loss = eval_ann(test_dataloader, model, loss_fn, device, rank)
+        val_acc, val_loss = eval_ann(test_dataloader, model, loss_fn, device, rank)
         if parallel:
-            dist.all_reduce(tmp_acc)
-            tmp_acc/=dist.get_world_size()
-        if rank == 0 and save != None and tmp_acc >= best_acc:
+            dist.all_reduce(val_acc)
+            val_acc/=dist.get_world_size()
+        if rank == 0 and save != None and val_acc >= best_acc:
             torch.save(model.state_dict(), './saved_models/' + save + '.pth')
         if rank == 0:
-            info='Epoch:{},Train_loss:{},Val_loss:{},Acc:{},lr:{}'.format(epoch, epoch_loss/length,val_loss, tmp_acc.item(),scheduler.get_last_lr()[0])
+            train_loss = epoch_loss / length
+            info='Epoch:{},Train_loss:{},Val_loss:{},Acc:{},lr:{}'.format(epoch, train_loss, val_loss, val_acc.item(),scheduler.get_last_lr()[0])
             with open('./runs/'+save+'_log.txt','a') as log:
                 log.write(info+'\n')
-        best_acc = max(tmp_acc, best_acc)
+            wandb.log({"epoch": epoch, "train/loss": train_loss, "val/loss": val_loss, "val/acc": val_acc.item})
+            
+        best_acc = max(val_acc, best_acc)
         # print('Epoch:{},Train_loss:{},Val_loss:{},Acc:{}'.format(epoch, epoch_loss/length,val_loss, tmp_acc), flush=True)
         # print(f'lr={scheduler.get_last_lr()[0]}')
         # print('best_acc: ', best_acc)

@@ -5,6 +5,7 @@ from Preprocess import datapool
 from funcs import *
 from utils import replace_maxpool2d_with_avgpool2d,replace_qcfs_with_sn,replace_relu_with_qcfs
 import torch.nn as nn
+import wandb
 
 parser = argparse.ArgumentParser()
 
@@ -29,6 +30,11 @@ parser.add_argument('--amp', type=bool,default=False, help='use amp on imagenet'
 args = parser.parse_args()
 seed_all(args.seed)
 if __name__ == "__main__":
+
+    wandb.login()
+    run = wandb.init(
+        project="my-awesome-project"
+    )
     
     # preparing data
     train, test = datapool(args.data, args.bs)

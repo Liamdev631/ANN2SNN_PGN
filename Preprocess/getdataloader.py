@@ -6,7 +6,7 @@ import os
 from Preprocess.augment import Cutout, CIFAR10Policy
 
 # your own data dir
-DIR = {'CIFAR10': 'your_path', 'CIFAR100': 'your_path', 'ImageNet': 'your_path'}
+DIR = {'CIFAR10': 'data', 'CIFAR100': 'data', 'ImageNet': 'data'}
 
 
 
