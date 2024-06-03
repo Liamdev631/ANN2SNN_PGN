@@ -19,78 +19,8 @@ def seed_all(seed=42):
     torch.cuda.manual_seed_all(seed)
     torch.backends.cudnn.deterministic = True
 
-def amp_train_ann(train_dataloader, test_dataloader, model, 
-              epochs, device, loss_fn,lr=0.1,lr_min=1e-5,wd=5e-4 , save=None, parallel=False,
-                rank=0):
-    use_amp=True
-
-    wandb.login()
-    run = wandb.init(
-        project="ANN2SNN_PNC",
-        config={"lr": lr, "max_epochs": epochs, "weight_decay": wd},
-    )
-
-
-    if rank==0:
-        with open('./runs/'+save+'_log.txt','a') as log:
-            log.write('lr={},epochs={},wd={}\n'.format(lr,epochs,wd))
-
-    model.cuda(device)
-    optimizer = torch.optim.SGD(model.parameters(), 
-                                lr=lr, weight_decay=wd, momentum=0.9)
-
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer,eta_min=lr_min, T_max=epochs)
-
-    scaler = torch.cuda.amp.GradScaler(enabled=use_amp)
-
-    best_acc=0.
-    for epoch in range(epochs):
-        model.train()
-        if parallel:
-            train_dataloader.sampler.set_epoch(epoch)
-        epoch_loss = 0
-        length = 0
-        model.train()
-        for img, label in tqdm(train_dataloader):
-            img = img.to(device)
-            label = label.to(device)
-            
-            with torch.autocast(device_type='cuda', dtype=torch.float16, enabled=use_amp):
-                out = model(img)
-                loss = loss_fn(out, label)
-            scaler.scale(loss).backward()
-            scaler.step(optimizer)
-            scaler.update()
-
-            optimizer.zero_grad()
-
-            epoch_loss += loss.item()
-            length += len(label)
-        val_acc, val_loss = eval_ann(test_dataloader, model, loss_fn, device, rank)
-        if parallel:
-            dist.all_reduce(val_acc)
-            val_acc/=dist.get_world_size()
-        if rank == 0 and save != None and val_acc >= best_acc:
-            checkpoint = {"model": model.state_dict(),
-              "optimizer": optimizer.state_dict(),
-              "scaler": scaler.state_dict()}
-            torch.save(checkpoint, './saved_models/' + save + '.pth')
-        if rank == 0:
-            train_loss = epoch_loss / length
-            info='Epoch:{},Train_loss:{},Val_loss:{},Acc:{}'.format(epoch, train_loss, val_loss, val_acc.item())
-            with open('./runs/'+save+'_log.txt','a') as log:
-                log.write(info+'\n')
-            run.log({"epoch": epoch, "train/loss": train_loss, "val/loss": val_loss, "val/acc": val_acc.item})
-            if epoch % 10 == 0:
-                print(model)
-        best_acc = max(val_acc, best_acc)
-        scheduler.step()
-
-    return best_acc, model
-
-
 def train_ann(train_dataloader, test_dataloader, model, 
-              epochs, device, loss_fn,lr=0.1,lr_min=1e-6,wd=5e-4 , save=None, parallel=False,
+              epochs, device, loss_fn, lr=0.1, lr_min=1e-5, wd=5e-4 , save=None, parallel=False,
                 rank=0):
     # model.cuda(device)
     # writer = SummaryWriter('./runs/'+save)
@@ -106,11 +36,11 @@ def train_ann(train_dataloader, test_dataloader, model,
 
     # mt.clear_recorded_data()
     # mt.remove_hooks()
-    wandb.login()
-    run = wandb.init(
-        project="ANN2SNN_PNC",
-        config={"lr": lr, "max_epochs": epochs, "weight_decay": wd},
-    )
+    # wandb.login()
+    # run = wandb.init(
+    #     project="ANN2SNN_PNC",
+    #     config={"lr": lr, "max_epochs": epochs, "weight_decay": wd},
+    # )
 
     if parallel:
         wd=1e-4
@@ -119,17 +49,16 @@ def train_ann(train_dataloader, test_dataloader, model,
         with open('./runs/'+save+'_log.txt','a') as log:
             log.write('lr={},epochs={},wd={}\n'.format(lr,epochs,wd))
 
-    optimizer = torch.optim.SGD(model.parameters(), 
-                                lr=lr, weight_decay=wd, momentum=0.9)
+    optimizer = torch.optim.SGD(model.parameters(), lr=lr, weight_decay=wd, momentum=0.9)
 
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer,eta_min=lr_min, T_max=epochs)
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, eta_min=lr_min, T_max=epochs)
+    #scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='max', patience=10, factor=0.5, threshold=1e-3, min_lr=1e-5) # Accuracy
 
-
-    best_acc=eval_ann(test_dataloader, model, loss_fn, device, rank)[0]
+    best_acc = eval_ann(test_dataloader, model, loss_fn, device, rank)[0]
     if parallel:
         dist.all_reduce(best_acc)
         best_acc/=dist.get_world_size()
-    if rank==0:
+    if rank == 0:
         print(best_acc)
     for epoch in tqdm(range(epochs)):
         model.train()
@@ -138,7 +67,7 @@ def train_ann(train_dataloader, test_dataloader, model,
         epoch_loss = 0
         length = 0
         model.train()
-        for img, label in tqdm(train_dataloader):
+        for img, label in train_dataloader:
             img = img.to(device)
             label = label.to(device)
             optimizer.zero_grad()
@@ -152,15 +81,15 @@ def train_ann(train_dataloader, test_dataloader, model,
         val_acc, val_loss = eval_ann(test_dataloader, model, loss_fn, device, rank)
         if parallel:
             dist.all_reduce(val_acc)
-            val_acc/=dist.get_world_size()
+            val_acc /= dist.get_world_size()
         if rank == 0 and save != None and val_acc >= best_acc:
             torch.save(model.state_dict(), './saved_models/' + save + '.pth')
         if rank == 0:
             train_loss = epoch_loss / length
-            info='Epoch:{},Train_loss:{},Val_loss:{},Acc:{},lr:{}'.format(epoch, train_loss, val_loss, val_acc.item(),scheduler.get_last_lr()[0])
+            info='Epoch:{},Train_loss:{},Val_loss:{},Acc:{},lr:{}'.format(epoch, train_loss, val_loss, val_acc.item(), scheduler.get_last_lr()[0])
             with open('./runs/'+save+'_log.txt','a') as log:
                 log.write(info+'\n')
-            run.log({"epoch": epoch, "train/loss": train_loss, "val/loss": val_loss, "val/acc": val_acc.item})
+            #run.log({"epoch": epoch, "train/loss": train_loss, "val/loss": val_loss, "val/acc": val_acc.item})
             
         best_acc = max(val_acc, best_acc)
         # print('Epoch:{},Train_loss:{},Val_loss:{},Acc:{}'.format(epoch, epoch_loss/length,val_loss, tmp_acc), flush=True)
@@ -171,7 +100,7 @@ def train_ann(train_dataloader, test_dataloader, model,
         # writer.add_scalars('Loss',{'train_loss':epoch_loss/length,'val_loss':val_loss},epoch)
         # writer.add_scalar('lr',scheduler.get_last_lr()[0],epoch)
         # writer.add_scalars('vth',qcfs_vth,epoch)
-        scheduler.step()
+        scheduler.step(val_acc)
         #print(module)
     # writer.close()
     return best_acc, model
@@ -183,7 +112,7 @@ def eval_snn(test_dataloader, model,loss_fn, device, sim_len=8, rank=0):
     model.eval()
 
     with torch.no_grad():
-        for idx, (img, label) in enumerate(tqdm((test_dataloader))):
+        for idx, (img, label) in enumerate((test_dataloader)):
             spikes = 0
             length += len(label)
             img = img.cuda()
@@ -204,7 +133,7 @@ def eval_ann(test_dataloader, model, loss_fn, device, rank=0):
     model.cuda(device)
     length = 0
     with torch.no_grad():
-        for img, label in tqdm(test_dataloader):
+        for img, label in test_dataloader:
             img = img.cuda(device)
             label = label.cuda(device)
             out = model(img)

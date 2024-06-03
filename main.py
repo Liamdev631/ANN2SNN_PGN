@@ -22,7 +22,7 @@ parser.add_argument('--t', default=16, type=int, help='T (time-steps)')
 parser.add_argument('--mode', type=str, default='ann')
 parser.add_argument('--seed', type=int, default=42)
 parser.add_argument('--data', type=str, default='cifar100')
-parser.add_argument('--model', type=str, default='pre_act_resnet34',help='Model architecture')
+parser.add_argument('--model', type=str, default='pre_act_resnet34', help='Model architecture')
 parser.add_argument('--sn_type', type=str, default='gn')
 parser.add_argument('--tau', type=int, default=4,help='members of one gn or pgn')
 parser.add_argument('--amp', type=bool,default=False, help='use amp on imagenet')
@@ -39,7 +39,7 @@ if __name__ == "__main__":
     criterion = nn.CrossEntropyLoss()
     if args.action == 'train':
         model=model.to(args.device)
-        train_ann(train, test, model, args.epochs, args.device, criterion, args.lr, args.lr_min,args.wd, args.id)
+        train_ann(train, test, model, args.epochs, args.device, criterion, args.lr, args.lr_min, args.wd, args.id)
     elif args.action == 'test':
         model.load_state_dict(torch.load('./saved_models/' + args.id + '.pth'))
         if args.mode == 'snn':
