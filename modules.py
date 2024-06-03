@@ -83,15 +83,15 @@ class QCFS(nn.Module):
 
 # Group Neuron
 class GN(base.MemoryModule):
-    def __init__(self, m:int=4, v_threshold: float = 1.0,
-                 surrogate_function: Callable = surrogate.Sigmoid(),step_mode: str = 's'):
+    def __init__(self, m: int = 4, v_threshold: float = 1.0,
+                 surrogate_function: Callable = surrogate.Sigmoid(), step_mode: str = 's'):
         super().__init__()
         self.m = m
         self.step_mode = step_mode
         self.surrogate_function = surrogate_function
-        self.v_threshold = v_threshold/self.m
+        self.v_threshold = v_threshold / self.m
         self.register_memory("v", self.v_threshold*0.5)
-        #threshholds of the member neurons: values are [v_threshold,2*v_threshold,3*v_threshold,...,m*v_threshold]
+        # thresholds of the member neurons: values are [v_threshold,2*v_threshold,3*v_threshold,...,m*v_threshold]
         self.bias=torch.arange(1,m+1,1)*self.v_threshold
     
     @staticmethod
