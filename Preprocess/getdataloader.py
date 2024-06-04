@@ -14,7 +14,6 @@ def GetCifar10(batchsize, attack=False):
                                   CIFAR10Policy(),
                                   transforms.ToTensor(),
                                   transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
-                                  Cutout(n_holes=1, length=16)
                                   ])
     if attack:
         trans = transforms.Compose([transforms.ToTensor()])
@@ -30,14 +29,16 @@ def GetCifar10(batchsize, attack=False):
 def GetCifar100(batchsize):
     MEAN = [n/255. for n in [129.3, 124.1, 112.4]]
     STD = [n/255. for n in [68.2,  65.4,  70.4]]
-    trans_t = transforms.Compose([transforms.RandomCrop(32, padding=4),
-                                  transforms.RandomHorizontalFlip(),
-                                  transforms.RandomRotation(15),
-                                  transforms.ToTensor(),
-                                  transforms.Normalize(mean=MEAN, std=STD),
-                                  Cutout(n_holes=1, length=16)
-                                  ])
-    trans = transforms.Compose([transforms.ToTensor(), transforms.Normalize(mean=MEAN, std=STD)])
+    trans_t = transforms.Compose([
+        transforms.RandomResizedCrop((32, 32)),
+        transforms.RandomHorizontalFlip(),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=MEAN, std=STD),
+    ])
+    trans = transforms.Compose([
+        transforms.ToTensor(),
+        transforms.Normalize(mean=MEAN, std=STD)
+    ])
     train_data = datasets.CIFAR100(DIR['CIFAR100'], train=True, transform=trans_t, download=True)
     test_data = datasets.CIFAR100(DIR['CIFAR100'], train=False, transform=trans, download=True) 
     train_dataloader = DataLoader(train_data, batch_size=batchsize, shuffle=True, num_workers=16, pin_memory=True)
@@ -45,18 +46,20 @@ def GetCifar100(batchsize):
     return train_dataloader, test_dataloader
 
 def GetImageNet(batchsize):
-    trans_t = transforms.Compose([transforms.RandomResizedCrop(224),
-                                transforms.RandomHorizontalFlip(),
-                                transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1),
-                                transforms.ToTensor(),
-                                transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-                                ])
+    trans_t = transforms.Compose([
+        transforms.RandomResizedCrop(224),
+        transforms.RandomHorizontalFlip(),
+        transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+    ])
     
-    trans = transforms.Compose([transforms.Resize(256),
-                            transforms.CenterCrop(224),
-                            transforms.ToTensor(), 
-                            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-                            ])
+    trans = transforms.Compose([
+        transforms.Resize(256),
+        transforms.CenterCrop(224),
+        transforms.ToTensor(), 
+        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+    ])
 
     train_data = datasets.ImageNet(DIR['ImageNet'], train=True, transform=trans_t)
     test_data = datasets.ImageNet(DIR['ImageNet'], train=False, transform=trans)

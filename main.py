@@ -3,7 +3,7 @@ import torch.multiprocessing as mp
 from Models import modelpool
 from Preprocess import datapool
 from funcs import *
-from utils import replace_maxpool2d_with_avgpool2d,replace_qcfs_with_sn,replace_relu_with_qcfs
+from utils import replace_maxpool2d_with_avgpool2d, replace_qcfs_with_sn, replace_relu_with_qcfs
 import torch.nn as nn
 
 parser = argparse.ArgumentParser()

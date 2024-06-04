@@ -34,7 +34,7 @@ cfg = {
 
 
 class VGG(nn.Module):
-    def __init__(self, vgg_name, num_classes, dropout):
+    def __init__(self, vgg_name, num_classes, dropout: float):
         super(VGG, self).__init__()
         self.init_channels = 3
         self.layer1 = self._make_layers(cfg[vgg_name][0], dropout)
@@ -74,7 +74,7 @@ class VGG(nn.Module):
             elif isinstance(m, nn.Linear):
                 nn.init.zeros_(m.bias)
 
-    def _make_layers(self, cfg, dropout):
+    def _make_layers(self, cfg, dropout: float):
         layers = []
         for x in cfg:
             if x == 'M':

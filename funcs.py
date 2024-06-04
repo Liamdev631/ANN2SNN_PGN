@@ -8,6 +8,7 @@ import os
 from spikingjelly.activation_based import functional
 from torch.utils.tensorboard import SummaryWriter   
 import wandb
+import torch.optim as optim
 
 def seed_all(seed=42):
     print(seed)
@@ -48,10 +49,12 @@ def train_ann(train_dataloader, test_dataloader, model, epochs, device, loss_fn,
         with open('./runs/'+save+'_log.txt','a') as log:
             log.write('lr={},epochs={},wd={}\n'.format(lr,epochs,wd))
 
-    optimizer = torch.optim.SGD(model.parameters(), lr=lr, weight_decay=wd, momentum=0.9)
+    #optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=wd)
+    optimizer = torch.optim.NAdam(model.parameters(), lr=lr, betas=[0.9, 0.999])
 
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, eta_min=lr_min, T_max=epochs)
+    #scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, eta_min=lr_min, T_max=epochs)
     #scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='max', patience=10, factor=0.5, threshold=1e-3, min_lr=1e-5) # Accuracy
+    scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones=[150], gamma=0.1)
 
     best_acc = eval_ann(test_dataloader, model, loss_fn, device, rank)[0]
     if parallel:
