@@ -19,9 +19,8 @@ def seed_all(seed=42):
     torch.cuda.manual_seed_all(seed)
     torch.backends.cudnn.deterministic = True
 
-def train_ann(train_dataloader, test_dataloader, model, 
-              epochs, device, loss_fn, lr=0.1, lr_min=1e-5, wd=5e-4 , save=None, parallel=False,
-                rank=0):
+def train_ann(train_dataloader, test_dataloader, model, epochs, device, loss_fn, lr=0.1, lr_min=1e-5,
+              wd=5e-4 , save=None, parallel=False, rank=0):
     # model.cuda(device)
     # writer = SummaryWriter('./runs/'+save)
     # mt=monitor.InputMonitor(model,SteppedReLU)
@@ -57,7 +56,7 @@ def train_ann(train_dataloader, test_dataloader, model,
     best_acc = eval_ann(test_dataloader, model, loss_fn, device, rank)[0]
     if parallel:
         dist.all_reduce(best_acc)
-        best_acc/=dist.get_world_size()
+        best_acc /= dist.get_world_size()
     if rank == 0:
         print(best_acc)
     for epoch in tqdm(range(epochs)):
@@ -66,6 +65,7 @@ def train_ann(train_dataloader, test_dataloader, model,
             train_dataloader.sampler.set_epoch(epoch)
         epoch_loss = 0
         length = 0
+        tot = torch.tensor(0.).cuda(device)
         model.train()
         for img, label in train_dataloader:
             img = img.to(device)
@@ -77,6 +77,8 @@ def train_ann(train_dataloader, test_dataloader, model,
             optimizer.step()
             epoch_loss += loss.item()
             length += len(label)
+            tot += (label==out.max(1)[1]).sum().data
+        train_acc = tot / length
 
         val_acc, val_loss = eval_ann(test_dataloader, model, loss_fn, device, rank)
         if parallel:
@@ -86,7 +88,7 @@ def train_ann(train_dataloader, test_dataloader, model,
             torch.save(model.state_dict(), './saved_models/' + save + '.pth')
         if rank == 0:
             train_loss = epoch_loss / length
-            info='Epoch:{},Train_loss:{},Val_loss:{},Acc:{},lr:{}'.format(epoch, train_loss, val_loss, val_acc.item(), scheduler.get_last_lr()[0])
+            info='Epoch:{},Train_loss:{},Val_loss:{},Train_acc:{},Val_acc:{},lr:{}'.format(epoch, train_loss, val_loss, train_acc.item(), val_acc.item(), scheduler.get_last_lr()[0])
             with open('./runs/'+save+'_log.txt','a') as log:
                 log.write(info+'\n')
             #run.log({"epoch": epoch, "train/loss": train_loss, "val/loss": val_loss, "val/acc": val_acc.item})

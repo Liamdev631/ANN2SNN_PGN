@@ -24,8 +24,8 @@ parser.add_argument('--seed', type=int, default=42)
 parser.add_argument('--data', type=str, default='cifar100')
 parser.add_argument('--model', type=str, default='pre_act_resnet34', help='Model architecture')
 parser.add_argument('--sn_type', type=str, default='gn')
-parser.add_argument('--tau', type=int, default=4,help='members of one gn or pgn')
-parser.add_argument('--amp', type=bool,default=False, help='use amp on imagenet')
+parser.add_argument('--tau', type=int, default=4, help='members of one gn or pgn')
+parser.add_argument('--amp', type=bool, default=False, help='use amp on imagenet')
 args = parser.parse_args()
 seed_all(args.seed)
 if __name__ == "__main__":
@@ -38,14 +38,14 @@ if __name__ == "__main__":
     model = replace_relu_with_qcfs(model, L=args.l)
     criterion = nn.CrossEntropyLoss()
     if args.action == 'train':
-        model=model.to(args.device)
+        model = model.to(args.device)
         train_ann(train, test, model, args.epochs, args.device, criterion, args.lr, args.lr_min, args.wd, args.id)
     elif args.action == 'test':
         model.load_state_dict(torch.load('./saved_models/' + args.id + '.pth'))
         if args.mode == 'snn':
-            model = replace_qcfs_with_sn(model,members=args.tau,sn_type=args.sn_type)
+            model = replace_qcfs_with_sn(model, members=args.tau, sn_type=args.sn_type)
             model.to(args.device)
-            acc = eval_snn(test, model,criterion, args.device, args.t)
+            acc = eval_snn(test, model, criterion, args.device, args.t)
             print('Accuracy: ', acc)
         elif args.mode == 'ann':
             model.to(args.device)

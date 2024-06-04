@@ -5,7 +5,6 @@ from copy import deepcopy
 from spikingjelly.activation_based import monitor, neuron, functional,surrogate
 from modules import *
 
-
 def get_module_by_name(parent, name):
     name_list = name.split(".")
     for item in name_list[:-1]:
@@ -18,7 +17,6 @@ def get_module_by_name(parent, name):
         return parent, child
     else:
         return None, None      
-
 
 def replace_relu_with_qcfs(model: nn.Module,L):
     input_monitor = monitor.InputMonitor(model, torch.nn.ReLU)
@@ -39,7 +37,7 @@ def replace_qcfs_with_sn(model: nn.Module,members:int,sn_type:str):
         parent, child = get_module_by_name(model, name)
         assert not (parent is None and child is None)
         if sn_type=='gn':
-            new_child = GN(m=members,v_threshold=child.v_threshold.item())
+            new_child = GN(m=members, v_threshold=child.v_threshold.item())
         elif sn_type=='if':
             new_child = CombinedNode(v_threshold=child.v_threshold.item())
         else:

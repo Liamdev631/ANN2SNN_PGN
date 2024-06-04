@@ -6,7 +6,7 @@ import os
 from Preprocess.augment import Cutout, CIFAR10Policy
 
 # your own data dir
-DIR = {'CIFAR10': 'data', 'CIFAR100': 'data', 'ImageNet': 'data'}
+DIR = {'CIFAR10': 'data/cifar10', 'CIFAR100': 'data/cifar100', 'ImageNet': 'imagenet/data'}
 
 def GetCifar10(batchsize, attack=False):
     trans_t = transforms.Compose([transforms.RandomCrop(32, padding=4),
@@ -28,17 +28,20 @@ def GetCifar10(batchsize, attack=False):
 
 
 def GetCifar100(batchsize):
+    MEAN = [n/255. for n in [129.3, 124.1, 112.4]]
+    STD = [n/255. for n in [68.2,  65.4,  70.4]]
     trans_t = transforms.Compose([transforms.RandomCrop(32, padding=4),
                                   transforms.RandomHorizontalFlip(),
+                                  transforms.RandomRotation(15),
                                   transforms.ToTensor(),
-                                  transforms.Normalize(mean=[n/255. for n in [129.3, 124.1, 112.4]], std=[n/255. for n in [68.2,  65.4,  70.4]]),
+                                  transforms.Normalize(mean=MEAN, std=STD),
                                   Cutout(n_holes=1, length=16)
                                   ])
-    trans = transforms.Compose([transforms.ToTensor(), transforms.Normalize(mean=[n/255. for n in [129.3, 124.1, 112.4]], std=[n/255. for n in [68.2,  65.4,  70.4]])])
+    trans = transforms.Compose([transforms.ToTensor(), transforms.Normalize(mean=MEAN, std=STD)])
     train_data = datasets.CIFAR100(DIR['CIFAR100'], train=True, transform=trans_t, download=True)
     test_data = datasets.CIFAR100(DIR['CIFAR100'], train=False, transform=trans, download=True) 
-    train_dataloader = DataLoader(train_data, batch_size=batchsize, shuffle=True, num_workers=8, pin_memory=True)
-    test_dataloader = DataLoader(test_data, batch_size=batchsize, shuffle=False, num_workers=4, pin_memory=True)
+    train_dataloader = DataLoader(train_data, batch_size=batchsize, shuffle=True, num_workers=16, pin_memory=True)
+    test_dataloader = DataLoader(test_data, batch_size=batchsize, shuffle=False, num_workers=16, pin_memory=True)
     return train_dataloader, test_dataloader
 
 def GetImageNet(batchsize):
@@ -55,11 +58,10 @@ def GetImageNet(batchsize):
                             transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
                             ])
 
-    train_data = datasets.ImageFolder(root=os.path.join(DIR['ImageNet'], 'train'), transform=trans_t)
-    train_sampler = torch.utils.data.distributed.DistributedSampler(train_data)
-    train_dataloader =DataLoader(train_data, batch_size=batchsize, shuffle=False, num_workers=16, sampler=train_sampler, pin_memory=True,prefetch_factor=2)
-
-    test_data = datasets.ImageFolder(root=os.path.join(DIR['ImageNet'], 'val'), transform=trans)
-    test_sampler = torch.utils.data.distributed.DistributedSampler(test_data)
+    train_data = datasets.ImageNet(DIR['ImageNet'], train=True, transform=trans_t)
+    test_data = datasets.ImageNet(DIR['ImageNet'], train=False, transform=trans)
+    train_dataloader = DataLoader(train_data, batch_size=batchsize, shuffle=False, num_workers=16, sampler=train_sampler, pin_memory=True, prefetch_factor=2)
     test_dataloader = DataLoader(test_data, batch_size=batchsize, shuffle=False, num_workers=8, sampler=test_sampler) 
-    return  train_dataloader,test_dataloader
+    train_sampler = torch.utils.data.distributed.DistributedSampler(train_data)
+    test_sampler = torch.utils.data.distributed.DistributedSampler(test_data)
+    return  train_dataloader, test_dataloader

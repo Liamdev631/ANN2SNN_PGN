@@ -2,9 +2,9 @@
 #Train ANN with QCFS.
 
 gpus=1
-bs=256
-lr=0.01
-lr_min=0.00001
+bs=128
+lr=0.001
+lr_min=0.0001
 epochs=200
 l=16
 data='cifar100'
