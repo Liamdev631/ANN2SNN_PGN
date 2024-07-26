@@ -9,10 +9,10 @@ from torch.autograd import Function
 class CombinedNode(neuron.BaseNode):
     def __init__(
         self,
-        bias=0.0,
+        bias = 0.0,
         v_threshold: float = 1.0,
-        p0=0.5,
-        v_reset=None,
+        p0 = 0.5,
+        v_reset = None,
         surrogate_function: Callable = surrogate.Sigmoid(),
         detach_reset: bool = False,
         step_mode="s",
@@ -31,14 +31,15 @@ class CombinedNode(neuron.BaseNode):
 
         self.bias = bias
         self.v_threshold = v_threshold
-        self.p0=p0
+        self.p0 = p0
         self.v = v_threshold * p0
         self._memories_rv["v"] = v_threshold * p0
 
     def single_step_forward(self, x: torch.Tensor):
         self.v_float_to_tensor(x)
         self.neuronal_charge(x)
-        spike = self.neuronal_fire()
+        #spike = self.neuronal_fire()
+        spike = self.v > self.v_threshold
         self.neuronal_reset(spike)
         return spike * self.v_threshold
 
@@ -67,7 +68,7 @@ class QCFS(nn.Module):
         super().__init__()
         self.T = T
         self.v_threshold = nn.Parameter(torch.tensor(float(T)))
-        self.p0=torch.tensor(0.5)
+        self.p0 = torch.tensor(0.5)
 
     @staticmethod
     def floor_ste(x):
@@ -83,16 +84,15 @@ class QCFS(nn.Module):
 
 # Group Neuron
 class GN(base.MemoryModule):
-    def __init__(self, m: int = 4, v_threshold: float = 1.0,
+    def __init__(self, m:int=4, v_threshold: float = 1.0,
                  surrogate_function: Callable = surrogate.Sigmoid(), step_mode: str = 's'):
         super().__init__()
         self.m = m
         self.step_mode = step_mode
         self.surrogate_function = surrogate_function
-        self.v_threshold = v_threshold / self.m
-        self.register_memory("v", self.v_threshold*0.5)
-        # thresholds of the member neurons: values are [v_threshold,2*v_threshold,3*v_threshold,...,m*v_threshold]
-        self.bias=torch.arange(1,m+1,1)*self.v_threshold
+        self.v_threshold = v_threshold/self.m
+        self.register_memory("v", self.v_threshold * 0.5)
+        self.bias = torch.arange(1, m+1 , 1) * self.v_threshold
     
     @staticmethod
     @torch.jit.script
@@ -104,22 +104,61 @@ class GN(base.MemoryModule):
         #shape is [m,N,C,H,W], an the initial value is 0.5*v_threshold
         self.v_float_to_tensor(x)
         #charge
-        self.v=self.v+x
+        self.v = self.v + x + self.bias
         #fire
-        spike=self.surrogate_function(self.v - self.bias)
+        spike = self.v > self.v_threshold
+        #spike = self.surrogate_function(self.v - self.bias)
         #spike aggregation
-        spike=torch.sum(spike,dim=0,keepdim=False)
+        spike = torch.sum(spike, dim=0, keepdim=False)
         #reset (or lateral inhibition)
-        self.v=self.jit_soft_reset(self.v,spike,self.v_threshold) 
+        self.v = self.jit_soft_reset(self.v, spike, self.v_threshold) 
+        return spike * self.v_threshold
+    
+    def v_float_to_tensor(self, x: torch.Tensor):
+        if isinstance(self.v, float):
+            v_init = self.v
+            self.v = torch.full_like(x.data, v_init)
+            self.len_vshape = len(self.v.shape)
+            self.v = self.v.repeat(self.m, *[1]*self.len_vshape).to(x)
+            self.bias = self.bias.view(-1, *[1]*self.len_vshape).to(x)
+
+  # Phased Group Neuron
+class PGN(base.MemoryModule):
+    def __init__(self, m: int = 4, v_threshold: float = 1.0,
+                 surrogate_function: Callable = surrogate.Sigmoid(), step_mode: str = 's'):
+        super().__init__()
+        self.m = m
+        self.step_mode = step_mode
+        self.surrogate_function = surrogate_function
+        self.v_threshold = v_threshold/self.m
+        self.register_memory("v", self.v_threshold*0.5)
+        self.bias=torch.arange(1, m+1, 1) * self.v_threshold
+    
+    @staticmethod
+    @torch.jit.script
+    def jit_soft_reset(v: torch.Tensor, spike: torch.Tensor, v_threshold: float):
+        v = v - spike * v_threshold
+        return v
+
+    def single_step_forward(self, x):
+        #shape is [m,N,C,H,W], an the initial value is 0.5*v_threshold
+        self.v_float_to_tensor(x)
+        #charge
+        self.v = self.v + x
+        #fire
+        spike = self.surrogate_function(self.v - self.bias)
+        #spike aggregation
+        spike = torch.sum(spike, dim=0, keepdim=False)
+        #reset (or lateral inhibition)
+        self.v = self.jit_soft_reset(self.v, spike, self.v_threshold) 
         return spike*self.v_threshold
     
     def v_float_to_tensor(self, x: torch.Tensor):
         if isinstance(self.v, float):
             v_init = self.v
             self.v = torch.full_like(x.data, v_init)
-            self.len_vshape=len(self.v.shape)
-            self.v=self.v.repeat(self.m,*[1]*self.len_vshape).to(x)
-            self.bias=self.bias.view(-1,*[1]*self.len_vshape).to(x)
+            self.len_vshape = len(self.v.shape)
+            self.v = self.v.repeat(self.m,*[1]*self.len_vshape).to(x)
+            self.bias = self.bias.view(-1,*[1]*self.len_vshape).to(x)
 
-  
 

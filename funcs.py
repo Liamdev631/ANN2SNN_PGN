@@ -110,8 +110,9 @@ def train_ann(train_dataloader, test_dataloader, model, epochs, device, loss_fn,
     # writer.close()
     return best_acc, model
 
-def eval_snn(test_dataloader, model,loss_fn, device, sim_len=8, rank=0):
+def eval_snn(test_dataloader, model, loss_fn, device, sim_len=8, rank=0) -> tuple[torch.Tensor, torch.Tensor]:
     tot = torch.zeros(sim_len).cuda()
+    loss = torch.zeros(sim_len).cuda()
     length = 0
     model = model.cuda()
     model.eval()
@@ -126,13 +127,12 @@ def eval_snn(test_dataloader, model,loss_fn, device, sim_len=8, rank=0):
                 out = model(img)
                 spikes += out
                 tot[t] += (label==spikes.max(1)[1]).sum()
-            spikes/=sim_len
-            loss = loss_fn(spikes, label)
+                loss[t] = loss_fn(spikes / t, label)
             functional.reset_net(model)
-    return (tot/length),loss.item()/length
+    return tot.detach().cpu().numpy() / length, loss.detach().cpu().numpy() / length
 
 def eval_ann(test_dataloader, model, loss_fn, device, rank=0):
-    epoch_loss = 0
+    epoch_loss = 0.0
     tot = torch.tensor(0.).cuda(device)
     model.eval()
     model.cuda(device)
@@ -146,4 +146,4 @@ def eval_ann(test_dataloader, model, loss_fn, device, rank=0):
             epoch_loss += loss.item()
             length += len(label)    
             tot += (label==out.max(1)[1]).sum().data
-    return (tot/length), epoch_loss/length
+    return tot.detach().cpu().numpy() / length, epoch_loss / length
