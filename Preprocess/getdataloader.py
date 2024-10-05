@@ -22,7 +22,7 @@ def GetCifar10(batchsize, attack=False):
     train_data = datasets.CIFAR10(DIR['CIFAR10'], train=True, transform=trans_t, download=True)
     test_data = datasets.CIFAR10(DIR['CIFAR10'], train=False, transform=trans, download=True) 
     train_dataloader = DataLoader(train_data, batch_size=batchsize, shuffle=True, num_workers=8)
-    test_dataloader = DataLoader(test_data, batch_size=batchsize, shuffle=False, num_workers=8)
+    test_dataloader = DataLoader(test_data, batch_size=batchsize, shuffle=False, num_workers=8, drop_last=True)
     return train_dataloader, test_dataloader
 
 
@@ -42,7 +42,7 @@ def GetCifar100(batchsize):
     train_data = datasets.CIFAR100(DIR['CIFAR100'], train=True, transform=trans_t, download=True)
     test_data = datasets.CIFAR100(DIR['CIFAR100'], train=False, transform=trans, download=True) 
     train_dataloader = DataLoader(train_data, batch_size=batchsize, shuffle=True, num_workers=16, pin_memory=True)
-    test_dataloader = DataLoader(test_data, batch_size=batchsize, shuffle=False, num_workers=16, pin_memory=True)
+    test_dataloader = DataLoader(test_data, batch_size=batchsize, shuffle=False, num_workers=16, pin_memory=True, drop_last=True)
     return train_dataloader, test_dataloader
 
 def GetImageNet(batchsize):

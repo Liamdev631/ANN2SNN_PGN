@@ -1,66 +1,79 @@
-from copy import deepcopy
-from spikingjelly.activation_based import neuron, surrogate,base
 import torch
 import torch.nn as nn
-from typing import Callable
-from torch.autograd import Function
 
-# CombineNode is actually "IF neuron". CombineNode is easier to use in ANN2SNN.
-class CombinedNode(neuron.BaseNode):
-    def __init__(
-        self,
-        bias = 0.0,
-        v_threshold: float = 1.0,
-        p0 = 0.5,
-        v_reset = None,
-        surrogate_function: Callable = surrogate.Sigmoid(),
-        detach_reset: bool = False,
-        step_mode="s",
-        backend="torch",
-        store_v_seq: bool = False,
-    ):
-        super().__init__(
-            v_threshold,
-            v_reset,
-            surrogate_function,
-            detach_reset,
-            step_mode,
-            backend,
-            store_v_seq,
-        )
+class IF(nn.Module):
+    def __init__(self, threshold: float | torch.Tensor, noise: float = 0.0):
+        super().__init__()
+        with torch.no_grad():
+            if isinstance(threshold, float):
+                self.threshold = nn.Parameter(data=torch.tensor(threshold), requires_grad=False)
+            else:
+                self.threshold = nn.Parameter(data=threshold, requires_grad=False)
+            self.noise = noise
+        self.is_initialized: bool = False
 
-        self.bias = bias
-        self.v_threshold = v_threshold
-        self.p0 = p0
-        self.v = v_threshold * p0
-        self._memories_rv["v"] = v_threshold * p0
+    def forward(self, x):
+        if not self.is_initialized:
+            self.is_initialized = True
+            self.forward_init(x)
+        
+        noise_sig = torch.randn_like(x) * self.noise
+        p = self.v + x + noise_sig
+        self.spikes = p > self.threshold
+        self.v = p - self.spikes * self.threshold
+        return self.spikes * self.threshold
 
-    def single_step_forward(self, x: torch.Tensor):
-        self.v_float_to_tensor(x)
-        self.neuronal_charge(x)
-        #spike = self.neuronal_fire()
-        spike = self.v > self.v_threshold
-        self.neuronal_reset(spike)
-        return spike * self.v_threshold
+    def forward_init(self, x):
+        self.v = torch.zeros_like(x)
+        self.reset()
 
-    def neuronal_charge(self, x: torch.Tensor):
-        self.v = self.v + x + self.bias
+    def reset(self):
+        if not self.is_initialized:
+            return
+        self.v.zero_()
+        self.spikes = torch.zeros_like(self.v, dtype=torch.bool)
 
-    def extra_repr(self):
-        if type(self.bias) is float:
-            b = "0."
-        else:
-            b = "non_zero"
-        return f" bias={self.bias}, p0={self.p0},v_threshold={self.v_threshold}, v_reset={self.v_reset}, detach_reset={self.detach_reset}, step_mode={self.step_mode}, backend={self.backend}"
+# Group neuron
+class GN(IF):
+    def __init__(self, threshold: float, tau: int = 4, noise: float = 0.0):
+        super().__init__(threshold / tau, noise)
+        with torch.no_grad():
+            self.tau = nn.Parameter(data=torch.tensor(tau), requires_grad=False)
+            self.subthreshold = nn.Parameter(data=torch.arange(1, tau+1).float() * threshold / tau, requires_grad=False)
 
-class GradFloor(Function):
-    @staticmethod
-    def forward(ctx, input):
-        return input.floor()
+    def forward(self, x: torch.Tensor):
+        x = x.unsqueeze(-1).expand(*([-1] * len(x.shape)), self.tau)
+        if not self.is_initialized:
+            self.is_initialized = True
+            self.forward_init(x)
 
-    @staticmethod
-    def backward(ctx, grad_output):
-        return grad_output
+        noise_sig = torch.randn_like(x) * self.noise
+        p = self.v + x + noise_sig
+        self.spikes = p > self.subthreshold
+        self.v = p - self.threshold * self.spikes.sum(dim=-1, dtype=torch.float32, keepdim=True)
+        return self.spikes.sum(dim=-1, dtype=torch.float32, keepdim=False) * self.threshold
+
+# Phased Group neuron
+class PGN(IF):
+    def __init__(self, threshold: float, tau: int = 4, noise: float = 0.0):
+        super().__init__(threshold, noise)
+        with torch.no_grad():
+            self.tau = nn.Parameter(data=torch.tensor(tau), requires_grad=False)
+
+    def forward(self, x: torch.Tensor):
+        x = x.unsqueeze(-1).expand(*([-1] * len(x.shape)), self.tau)
+        super().forward(x) # Use IF logic but scale down the output spikes
+        return self.spikes.mean(dim=-1, dtype=torch.float32) * self.threshold
+
+    def reset(self):
+        if not self.is_initialized:
+            return
+        init_shape = self.v.shape
+        v_init = torch.arange(0, self.tau + 1, device=self.v.device)[:-1] * self.threshold / self.tau
+        v_init = v_init.view(*([1] * (len(self.v.shape)-1)), *v_init.shape)
+        self.v = v_init.repeat(*self.v.shape[:-1], 1)
+        assert init_shape == self.v.shape
+        self.spikes = torch.zeros_like(self.v, dtype=torch.bool)
 
 # QCFS is the reproduction of the paper "QCFS"
 class QCFS(nn.Module):
@@ -75,90 +88,15 @@ class QCFS(nn.Module):
         return (x.floor() - x).detach() + x
 
     def extra_repr(self):
-        return f"T={self.T}, p0={self.p0.item()},v_threshold={self.v_threshold.item()}"
+        return f"T={self.T}, p0={self.p0.item()}, v_threshold={self.v_threshold.item()}"
 
     def forward(self, x):
-        y = self.floor_ste(x * self.T / self.v_threshold +(self.p0))
+        y = self.floor_ste(x * self.T / self.v_threshold + self.p0)
         y = torch.clamp(y, 0, self.T) 
         return y* self.v_threshold / self.T
 
-# Group Neuron
-class GN(base.MemoryModule):
-    def __init__(self, m:int=4, v_threshold: float = 1.0,
-                 surrogate_function: Callable = surrogate.Sigmoid(), step_mode: str = 's'):
-        super().__init__()
-        self.m = m
-        self.step_mode = step_mode
-        self.surrogate_function = surrogate_function
-        self.v_threshold = v_threshold/self.m
-        self.register_memory("v", self.v_threshold * 0.5)
-        self.bias = torch.arange(1, m+1 , 1) * self.v_threshold
-    
-    @staticmethod
-    @torch.jit.script
-    def jit_soft_reset(v: torch.Tensor, spike: torch.Tensor, v_threshold: float):
-        v = v - spike * v_threshold
-        return v
-
-    def single_step_forward(self, x):
-        #shape is [m,N,C,H,W], an the initial value is 0.5*v_threshold
-        self.v_float_to_tensor(x)
-        #charge
-        self.v = self.v + x + self.bias
-        #fire
-        spike = self.v > self.v_threshold
-        #spike = self.surrogate_function(self.v - self.bias)
-        #spike aggregation
-        spike = torch.sum(spike, dim=0, keepdim=False)
-        #reset (or lateral inhibition)
-        self.v = self.jit_soft_reset(self.v, spike, self.v_threshold) 
-        return spike * self.v_threshold
-    
-    def v_float_to_tensor(self, x: torch.Tensor):
-        if isinstance(self.v, float):
-            v_init = self.v
-            self.v = torch.full_like(x.data, v_init)
-            self.len_vshape = len(self.v.shape)
-            self.v = self.v.repeat(self.m, *[1]*self.len_vshape).to(x)
-            self.bias = self.bias.view(-1, *[1]*self.len_vshape).to(x)
-
-  # Phased Group Neuron
-class PGN(base.MemoryModule):
-    def __init__(self, m: int = 4, v_threshold: float = 1.0,
-                 surrogate_function: Callable = surrogate.Sigmoid(), step_mode: str = 's'):
-        super().__init__()
-        self.m = m
-        self.step_mode = step_mode
-        self.surrogate_function = surrogate_function
-        self.v_threshold = v_threshold/self.m
-        self.register_memory("v", self.v_threshold*0.5)
-        self.bias=torch.arange(1, m+1, 1) * self.v_threshold
-    
-    @staticmethod
-    @torch.jit.script
-    def jit_soft_reset(v: torch.Tensor, spike: torch.Tensor, v_threshold: float):
-        v = v - spike * v_threshold
-        return v
-
-    def single_step_forward(self, x):
-        #shape is [m,N,C,H,W], an the initial value is 0.5*v_threshold
-        self.v_float_to_tensor(x)
-        #charge
-        self.v = self.v + x
-        #fire
-        spike = self.surrogate_function(self.v - self.bias)
-        #spike aggregation
-        spike = torch.sum(spike, dim=0, keepdim=False)
-        #reset (or lateral inhibition)
-        self.v = self.jit_soft_reset(self.v, spike, self.v_threshold) 
-        return spike*self.v_threshold
-    
-    def v_float_to_tensor(self, x: torch.Tensor):
-        if isinstance(self.v, float):
-            v_init = self.v
-            self.v = torch.full_like(x.data, v_init)
-            self.len_vshape = len(self.v.shape)
-            self.v = self.v.repeat(self.m,*[1]*self.len_vshape).to(x)
-            self.bias = self.bias.view(-1,*[1]*self.len_vshape).to(x)
-
-
+def reset_net(model: nn.Module):
+	for module in model.modules():
+		if issubclass(module.__class__, IF):
+			module.is_initialized = False
+			module.reset()

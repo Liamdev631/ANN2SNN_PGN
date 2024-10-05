@@ -1,7 +1,7 @@
 # !sh
 #Train ANN with QCFS.
 
-gpus=8
+gpus=1
 bs=128
 lr=0.1
 epochs=200

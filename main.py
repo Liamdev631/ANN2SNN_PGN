@@ -4,6 +4,7 @@ from Models import modelpool
 from Preprocess import datapool
 from funcs import *
 from utils import replace_maxpool2d_with_avgpool2d, replace_qcfs_with_sn, replace_relu_with_qcfs
+import torch
 import torch.nn as nn
 
 parser = argparse.ArgumentParser()
@@ -28,9 +29,15 @@ parser.add_argument('--tau', type=int, default=4, help='members of one gn or pgn
 parser.add_argument('--amp', type=bool, default=False, help='use amp on imagenet')
 args = parser.parse_args()
 seed_all(args.seed)
+print('cuda?: ', 'yes' if torch.cuda.is_available() else 'no')
+
 if __name__ == "__main__":
-    
     # preparing data
+    if args.mode == 'ann':
+        print('mode: ann')
+    else:
+        print('mode: snn')
+        print('sn_type', args.sn_type)
     train, test = datapool(args.data, args.bs)
     # preparing model
     model = modelpool(args.model, args.data)
@@ -41,10 +48,10 @@ if __name__ == "__main__":
         model = model.to(args.device)
         train_ann(train, test, model, args.epochs, args.device, criterion, args.lr, args.lr_min, args.wd, args.id)
     elif args.action == 'test':
-        model.load_state_dict(torch.load('./saved_models/' + args.id + '.pth'))
+        model.load_state_dict(torch.load('./saved_models/' + args.id + '.pth', weights_only=True))
         if args.mode == 'snn':
             model = replace_qcfs_with_sn(model, members=args.tau, sn_type=args.sn_type)
-            model.to(args.device)
+            model = model.to(args.device)
             acc = eval_snn(test, model, criterion, args.device, args.t)
             print('Accuracy: ', acc)
         elif args.mode == 'ann':

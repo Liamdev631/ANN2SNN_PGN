@@ -5,10 +5,13 @@ from utils import *
 import torch.distributed as dist
 import random
 import os
-from spikingjelly.activation_based import functional
-from torch.utils.tensorboard import SummaryWriter   
-import wandb
 import torch.optim as optim
+from modules import reset_net
+
+def reset_net(model: nn.Module):
+	for module in model.modules():
+		if issubclass(module.__class__, IF):
+			module.reset()
 
 def seed_all(seed=42):
     print(seed)
@@ -111,14 +114,15 @@ def train_ann(train_dataloader, test_dataloader, model, epochs, device, loss_fn,
     return best_acc, model
 
 def eval_snn(test_dataloader, model, loss_fn, device, sim_len=8, rank=0) -> tuple[torch.Tensor, torch.Tensor]:
-    tot = torch.zeros(sim_len).cuda()
-    loss = torch.zeros(sim_len).cuda()
+    tot = torch.zeros(sim_len).to(device)
+    loss = torch.zeros(sim_len).to(device)
     length = 0
-    model = model.cuda()
     model.eval()
+    model = model.to(device)
 
     with torch.no_grad():
         for idx, (img, label) in enumerate((test_dataloader)):
+            reset_net(model)
             spikes = 0
             length += len(label)
             img = img.cuda()
@@ -127,15 +131,15 @@ def eval_snn(test_dataloader, model, loss_fn, device, sim_len=8, rank=0) -> tupl
                 out = model(img)
                 spikes += out
                 tot[t] += (label==spikes.max(1)[1]).sum()
-                loss[t] = loss_fn(spikes / t, label)
-            functional.reset_net(model)
+                loss[t] += loss_fn(spikes / t, label)
+            reset_net(model)
     return tot.detach().cpu().numpy() / length, loss.detach().cpu().numpy() / length
 
 def eval_ann(test_dataloader, model, loss_fn, device, rank=0):
     epoch_loss = 0.0
-    tot = torch.tensor(0.).cuda(device)
+    tot = torch.tensor(0.).to(device)
     model.eval()
-    model.cuda(device)
+    model = model.to(device)
     length = 0
     with torch.no_grad():
         for img, label in test_dataloader:

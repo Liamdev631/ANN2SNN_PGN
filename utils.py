@@ -1,9 +1,8 @@
-from math import sqrt
 import torch.nn  as nn
 import torch
-from copy import deepcopy
-from spikingjelly.activation_based import monitor, neuron, functional,surrogate
+from spikingjelly.activation_based import monitor
 from modules import *
+
 
 def get_module_by_name(parent, name):
     name_list = name.split(".")
@@ -18,12 +17,13 @@ def get_module_by_name(parent, name):
     else:
         return None, None      
 
-def replace_relu_with_qcfs(model: nn.Module,L):
+
+def replace_relu_with_qcfs(model: nn.Module, L: int):
     input_monitor = monitor.InputMonitor(model, torch.nn.ReLU)
     for name in input_monitor.monitored_layers:
         parent, child = get_module_by_name(model, name)
         assert not (parent is None and child is None)
-        new_child=QCFS(T=L)
+        new_child = QCFS(T=L)
         setattr(parent, name.split('.')[-1], new_child)
     input_monitor.clear_recorded_data()
     input_monitor.remove_hooks()
@@ -31,19 +31,20 @@ def replace_relu_with_qcfs(model: nn.Module,L):
 
 # replace qcfs with spiking neurons (IF Neurons or Group Neurons)
 # "members" denotes the number of members in one group neuron.
-def replace_qcfs_with_sn(model: nn.Module,members:int,sn_type:str):
+def replace_qcfs_with_sn(model: nn.Module, members: int, sn_type: str, noise: float = 0.0):
     input_monitor = monitor.InputMonitor(model, QCFS)
     for name in input_monitor.monitored_layers:
         parent, child = get_module_by_name(model, name)
         assert not (parent is None and child is None)
-        if sn_type == 'pgn':
-            new_child = PGN(m=members, v_threshold=child.v_threshold.item())
+        threshold = child.v_threshold.item()
+        if sn_type == 'if':
+            new_child = IF(threshold, noise)
         elif sn_type == 'gn':
-            new_child = GN(m=members, v_threshold=child.v_threshold.item())
-        elif sn_type == 'if':
-            new_child = CombinedNode(v_threshold=child.v_threshold.item())
+            new_child = GN(threshold, members, noise)
+        elif sn_type == 'pgn':
+            new_child = PGN(threshold, members, noise)
         else:
-            raise ValueError('sn_type must be pgn or gn or if')
+            raise ValueError('sn_type must be if, gn, or pgn')
         setattr(parent, name.split('.')[-1], new_child)
     input_monitor.clear_recorded_data()
     input_monitor.remove_hooks()
@@ -59,5 +60,3 @@ def replace_maxpool2d_with_avgpool2d(model: nn.Module):
     input_monitor.clear_recorded_data()
     input_monitor.remove_hooks()
     return model
-
-

@@ -4,9 +4,9 @@
 gpus=1
 bs=128
 l=8
-data='cifar100'
+data='cifar10'
 model='resnet20'
-id='resnet20-cifar100'
+id='resnet20-cifar10'
 tau=4
 t=32
 device='cuda'
