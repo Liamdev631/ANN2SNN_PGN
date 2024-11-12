@@ -3,7 +3,6 @@ import torch
 from spikingjelly.activation_based import monitor
 from modules import *
 
-
 def get_module_by_name(parent, name):
     name_list = name.split(".")
     for item in name_list[:-1]:
@@ -31,18 +30,20 @@ def replace_relu_with_qcfs(model: nn.Module, L: int):
 
 # replace qcfs with spiking neurons (IF Neurons or Group Neurons)
 # "members" denotes the number of members in one group neuron.
-def replace_qcfs_with_sn(model: nn.Module, members: int, sn_type: str, noise: float = 0.0):
+def replace_qcfs_with_sn(model: nn.Module, tau: int, sn_type: str, noise: float = 0.0, dt: float = 1.0):
     input_monitor = monitor.InputMonitor(model, QCFS)
     for name in input_monitor.monitored_layers:
         parent, child = get_module_by_name(model, name)
         assert not (parent is None and child is None)
         threshold = child.v_threshold.item()
         if sn_type == 'if':
-            new_child = IF(threshold, noise)
+            new_child = IF(threshold, noise, dt)
         elif sn_type == 'gn':
-            new_child = GN(threshold, members, noise)
+            new_child = GN(threshold, tau, noise, dt)
         elif sn_type == 'pgn':
-            new_child = PGN(threshold, members, noise)
+            new_child = PGN(threshold, tau, noise, dt)
+        elif sn_type == 'rt':
+            new_child = RT(threshold, tau, noise, dt)
         else:
             raise ValueError('sn_type must be if, gn, or pgn')
         setattr(parent, name.split('.')[-1], new_child)

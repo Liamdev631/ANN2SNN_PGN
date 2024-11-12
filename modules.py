@@ -2,14 +2,15 @@ import torch
 import torch.nn as nn
 
 class IF(nn.Module):
-    def __init__(self, threshold: float | torch.Tensor, noise: float = 0.0):
+    def __init__(self, threshold: float | torch.Tensor, noise: float = 0.0, dt: float = 1.0):
         super().__init__()
         with torch.no_grad():
             if isinstance(threshold, float):
-                self.threshold = nn.Parameter(data=torch.tensor(threshold), requires_grad=False)
+                self.threshold = nn.Parameter(torch.tensor(threshold), requires_grad=False)
             else:
-                self.threshold = nn.Parameter(data=threshold, requires_grad=False)
+                self.threshold = nn.Parameter(threshold, requires_grad=False)
             self.noise = noise
+            self.dt = dt
         self.is_initialized: bool = False
 
     def forward(self, x):
@@ -18,10 +19,11 @@ class IF(nn.Module):
             self.forward_init(x)
         
         noise_sig = torch.randn_like(x) * self.noise
-        p = self.v + x + noise_sig
+        p = self.v + (x + noise_sig) * self.dt
         self.spikes = p > self.threshold
-        self.v = p - self.spikes * self.threshold
-        return self.spikes * self.threshold
+        psp = self.spikes * self.threshold
+        self.v = p - psp
+        return psp
 
     def forward_init(self, x):
         self.v = torch.zeros_like(x)
@@ -35,8 +37,8 @@ class IF(nn.Module):
 
 # Group neuron
 class GN(IF):
-    def __init__(self, threshold: float, tau: int = 4, noise: float = 0.0):
-        super().__init__(threshold / tau, noise)
+    def __init__(self, threshold: float, tau: int = 4, noise: float = 0.0, dt: float = 1.0):
+        super().__init__(threshold / tau, noise, dt)
         with torch.no_grad():
             self.tau = nn.Parameter(data=torch.tensor(tau), requires_grad=False)
             self.subthreshold = nn.Parameter(data=torch.arange(1, tau+1).float() * threshold / tau, requires_grad=False)
@@ -48,15 +50,20 @@ class GN(IF):
             self.forward_init(x)
 
         noise_sig = torch.randn_like(x) * self.noise
-        p = self.v + x + noise_sig
+        p = self.v + (x + noise_sig) * self.dt
         self.spikes = p > self.subthreshold
         self.v = p - self.threshold * self.spikes.sum(dim=-1, dtype=torch.float32, keepdim=True)
         return self.spikes.sum(dim=-1, dtype=torch.float32, keepdim=False) * self.threshold
 
+# Reduced Threshold
+class RT(IF):
+    def __init__(self, threshold: float, tau: int = 4, noise: float = 0.0, dt: float = 1.0):
+        super().__init__(threshold / tau, noise, dt)
+
 # Phased Group neuron
 class PGN(IF):
-    def __init__(self, threshold: float, tau: int = 4, noise: float = 0.0):
-        super().__init__(threshold, noise)
+    def __init__(self, threshold: float, tau: int = 4, noise: float = 0.0, dt: float = 1.0):
+        super().__init__(threshold, noise, dt)
         with torch.no_grad():
             self.tau = nn.Parameter(data=torch.tensor(tau), requires_grad=False)
 

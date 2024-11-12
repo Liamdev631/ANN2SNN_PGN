@@ -31,7 +31,7 @@ args = parser.parse_args()
 seed_all(args.seed)
 print('cuda?: ', 'yes' if torch.cuda.is_available() else 'no')
 
-if __name__ == "__main__":
+def main():
     # preparing data
     if args.mode == 'ann':
         print('mode: ann')
@@ -46,17 +46,25 @@ if __name__ == "__main__":
     criterion = nn.CrossEntropyLoss()
     if args.action == 'train':
         model = model.to(args.device)
-        train_ann(train, test, model, args.epochs, args.device, criterion, args.lr, args.lr_min, args.wd, args.id)
+        acc, loss, _ = train_ann(train, test, model, args.epochs, args.device, criterion, args.lr, args.lr_min, args.wd, args.id)
+        return acc, loss
     elif args.action == 'test':
         model.load_state_dict(torch.load('./saved_models/' + args.id + '.pth', weights_only=True))
         if args.mode == 'snn':
-            model = replace_qcfs_with_sn(model, members=args.tau, sn_type=args.sn_type)
+            model = replace_qcfs_with_sn(model, tau=args.tau, sn_type=args.sn_type)
             model = model.to(args.device)
-            acc = eval_snn(test, model, criterion, args.device, args.t)
-            print('Accuracy: ', acc)
+            acc, loss = eval_snn(test, model, criterion, args.device, args.t)
+            print('Accuracy: ', np.max(acc))
+            print('Loss: ', np.max(loss))
+            return acc, loss
         elif args.mode == 'ann':
             model.to(args.device)
-            acc, _ = eval_ann(test, model, criterion, args.device)
+            acc, loss = eval_ann(test, model, criterion, args.device)
             print('Accuracy: {:.4f}'.format(acc))
+            print('Loss: {:.4f}'.format(loss))
+            return acc, loss
         else:
             AssertionError('Unrecognized mode')
+
+if __name__ == "__main__":
+    main()
